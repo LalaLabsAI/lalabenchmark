@@ -1,0 +1,97 @@
+{
+  "run_name": "qwen-14b-10-items-reliableeval",
+  "benchmark": {
+    "path": "lala-submissios-sample.json",
+    "label_map": null
+  },
+  "logs": {
+    "dir": "logs",
+    "run_id": null
+  },
+  "steps": {
+    "generate_variants": true,
+    "run_model": true,
+    "judge_responses": true,
+    "estimate_n": true,
+    "analyze_scores": true
+  },
+  "eval": {
+    "resume": true,
+    "checkpoint_every": 1,
+    "limit_items": 10
+  },
+  "rewriter": {
+    "provider": "openai-compatible",
+    "model": "qwen/qwen3-32b",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0.6,
+    "max_tokens": 4096,
+    "timeout": 180,
+    "retries": 2,
+    "json_mode": true,
+    "max_rewrite_attempts": 4,
+    "target_rewrite_retries": 2
+  },
+  "model": {
+    "provider": "openai-compatible",
+    "model": "qwen/qwen3-14b",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0,
+    "max_tokens": 2048,
+    "timeout": 180,
+    "retries": 2,
+    "system_prompt": ""
+  },
+  "judge": {
+    "provider": "openai-compatible",
+    "model": "qwen/qwen3-14b",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "temperature": 0,
+    "max_tokens": 1024,
+    "timeout": 180,
+    "retries": 2,
+    "json_mode": true,
+    "max_repair_attempts": 2,
+    "max_score_retries": 2
+  },
+  "reliable_eval": {
+    "metric": "final_distance_coverage_sensitive",
+    "epsilon": 0.01,
+    "delta": 0.1,
+    "proxy_resampling_budget": 10,
+    "min_proxy_resamplings": 5,
+    "exhaustive_until": 2,
+    "samples_per_n": 5000,
+    "seed": 0
+  },
+  "embedding": {
+    "provider": "openai-compatible",
+    "model": "text-embedding-3-large",
+    "base_url": "https://api.openai.com/v1",
+    "api_key_env": "OPENAI_API_KEY",
+    "dimensions": 3072,
+    "timeout": 120,
+    "retries": 2
+  },
+  "scoring": {
+    "metric": "final_distance_coverage_sensitive",
+    "key_claims_enabled": true,
+    "key_claim_top_k": 3,
+    "human_audit_performed": false,
+    "importance_weights": {
+      "low": 0.25,
+      "medium": 0.5,
+      "high": 0.75,
+      "critical": 1.0
+    },
+    "severity_multipliers": {
+      "preserved": 0.0,
+      "omitted": 0.08,
+      "replaced": 0.15,
+      "contradicted": 0.25
+    }
+  }
+}

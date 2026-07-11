@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+artifacts/
+lala-submissios-sample.json
+logs/*
+!logs/.gitkeep
+

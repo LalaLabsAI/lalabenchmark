@@ -1,0 +1,62 @@
+{
+    "exported_at": "2026-06-10T03:00:23+00:00",
+    "exported_by": "michael",
+    "total_count": 43,
+    "submissions": [
+        {
+            "id": 55,
+            "prompt": "Let $\\Diamond$ be an existential epistemic modal operator like English \"Might\"\r\nLet $\\Triangle$ be a probability operator like English \"Probably\"\r\nLet $p$ be an atomic sentence.\r\n\r\nGive three different examples of English sentences that have a sentence of the logical form $\\Diamond \\Triangle p$ embedded under at least two other logical operators. For each, provide all relevant context, the sentence itself, the logical form of the entire sentence, the rough meaning of the entire sentence that includes an explanation of why the sentence isn't marked.",
+            "ideal": "1.\r\n\r\nContext: Management has just conducted a round of interviews and Steve and Jim have just discussed who they think the likely hires are based on the limited information they have. Jim is now communicating Steve's opinion to Mark.\r\n\r\nSentence: Steve thinks that Alice is a likely hire, and that Bob might be a likely hire.\r\n\r\nLogical Form: Steve believes that ( \\Triangle (Alice is a hire) \\land \\Diamond \\Triangle Bob is a hire ))\r\n\r\nThis means that Steve believes both that 1) Alice being hired is probable and 2) his information has not ruled out that Bob being hired is probable. This is a plausible thing to say because Jim is reporting Steve's beliefs and which likelihoods are included and ruled out.\r\n\r\n2.\r\n\r\nContext: Adam and Bob are discussing the weather but they have incomplete information. Snow is likely given that it rains, but they have no idea how likely rain is. Adam knows that it will be windy.\r\n\r\nSentence: It will be windy and it might be probable that it snows. Do you think it will rain?\r\n\r\nLogical Form: It will be windy \\land \\Diamond \\Triangle it snows\r\n\r\nThis means that it will rain, and moreover, that it hasn't been ruled out that snow is likely. \r\n\r\n3. \r\n\r\nContext: A group of people, including Adam, are discussing whether David will go to the dance. Adam repeats what Ben told him.\r\n\r\nBen said that if Carolyn goes to the dance then David may probably go.\r\n\r\nLogical form: Ben said that (Carolyn goes to the dance \\to \\Diamond \\Triangle David goes to the dance)\r\n\r\nThis means that Carolyn's attending the dance is sufficient to ensure that it being likely that David attends is not ruled out.",
+            "source": "patrick",
+            "keywords": {
+                "1": "Epistemic modals",
+                "2": "Probability operators",
+                "3": "Complex embeddings",
+                "4": "",
+                "5": ""
+            },
+            "created_at": "2026-06-10 01:07:59"
+        },
+        {
+            "id": 54,
+            "prompt": "Adam and Bob run a carnival game. Adam is pretending to be a participant in the game so that onlookers will play.\r\n\r\nThere are three cups, left, right, and center. Bob has placed the ball under a cup and then quickly rearranged them while Adam watches. Now Adam must guess which cup covers the ball. Bob knows that the ball is under the center cup. Things have not gone according to plan and Adam actually doesn’t know which cup the ball is under.\r\n\r\nAdam: is the ball under the left cup?\r\n\r\nBob: Maybe not, but then again, maybe it is. Who can say?\r\n\r\nAdam is no closer to knowing the location of the ball and guesses.\r\n\r\nAdam: Center, I think.\r\n\r\nBob: we have a winner!!\r\n\r\nWhat does Bob plausibly communicate with his answer?",
+            "ideal": "Since Bob does not necessarily know that things haven't gone according to plan, Bob is probably just keeping up appearances by answering Adam's question. This would seem to be the case regardless of whether or not he is aware that things haven't gone properly. Thus, what he communicates is primarily for the audience, and not for Adam. Importantly, it says that Adam is no closer to knowing the truth after Bob's response suggesting that there is no secret code or anything else that Bob is communicating to Adam.",
+            "source": "patrick",
+            "keywords": {
+                "1": "Deception",
+                "2": "Implicature",
+                "3": "Possible hidden meaning",
+                "4": "",
+                "5": ""
+            },
+            "created_at": "2026-06-09 23:50:18"
+        },
+        {
+            "id": 53,
+            "prompt": "Consider the following conversation:\r\n\r\nAnn: By the way, I heard at the department meeting that Sam is retiring! \r\nBob: Oh really? What does she plan to do when she retires? \r\nAnn: [slight hesitation] I don’t know.\r\n\r\nAnn's response suggests there might be a minor breakdown in the conversation. What might explain this?",
+            "ideal": "The most evident explanation is that the breakdown results from a mismatch between Ann’s knowledge related to Sam’s retirement and Bob’s presupposition of Ann’s knowledge. As Ann heard the information second hand at a department meeting, she may not have the detailed information about Sam’s retirement that was presupposed in Bob’s question. This mismatch leads to Ann’s hesitation before responding that she doesn’t know.\r\n\r\nThere is no evidence in the conversation that Ann’s hesitation is the result of processing difficulty related to the pronouns referring to Sam. Presumably Ann, Bob, and Sam all know each other.",
+            "source": "marcus",
+            "keywords": {
+                "1": "presupposition",
+                "2": "world knowledge",
+                "3": "conversation",
+                "4": "gender and pronouns",
+                "5": ""
+            },
+            "created_at": "2026-06-09 17:38:39"
+        },
+        {
+            "id": 52,
+            "prompt": "Consider the following conversation:\r\n\r\nAnn: By the way, I heard at the department meeting that Cindy is retiring! \r\nBob: Oh really? What does she plan to do when she retires? \r\nAnn: [slight hesitation] I don’t know.\r\n\r\nAnn's response suggests there might be a minor breakdown in the conversation. What might explain this?",
+            "ideal": "The most evident explanation is that the breakdown results from a mismatch between Ann’s knowledge related to Cindy’s retirement and Bob’s presupposition of Ann’s knowledge. As Ann heard the information second hand at a department meeting, she may not have the detailed information about Cindy’s retirement that was presupposed in Bob’s question. This mismatch leads to Ann’s hesitation before responding that she doesn't know. [Note: this version of the question serves as a baseline. The model is expected to answer it correctly.]",
+            "source": "marcus",
+            "keywords": {
+                "1": "presupposition",
+                "2": "world knowledge",
+                "3": "conversation",
+                "4": "",
+                "5": ""
+            },
+            "created_at": "2026-06-09 17:35:28"
+        }]
+}

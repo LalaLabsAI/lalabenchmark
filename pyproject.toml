@@ -1,0 +1,10 @@
+[project]
+name = "lalabenchmark-reliable-eval"
+version = "0.1.0"
+description = "ReliableEval-style tooling for the LALA benchmark."
+requires-python = ">=3.10"
+dependencies = ["tqdm>=4.66"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
