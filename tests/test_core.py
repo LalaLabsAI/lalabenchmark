@@ -9,8 +9,9 @@ from unittest.mock import patch
 
 from reliable_eval.benchmark import BenchmarkItem, load_benchmark
 from reliable_eval.cli.print_rewrites import extract_variants_manifest, format_rewrites
+from reliable_eval.cli.run_config import build_parser, format_reliable_n_statistics, format_score_statistics, stage_step_overrides
 from reliable_eval.config import load_run_config
-from reliable_eval.pipeline import _judge_response_job, _rewrite_item_variants_job, _rewrite_prompt_job, run_configured_pipeline
+from reliable_eval.pipeline import _judge_response_job, _prepare_run_dir, _rewrite_item_variants_job, _rewrite_prompt_job, run_configured_pipeline
 from reliable_eval.reliable import estimate_reliable_sample_size
 from reliable_eval.scoring import judge_response
 from reliable_eval.statistics import describe, percentile
@@ -83,6 +84,7 @@ class CoreTests(unittest.TestCase):
         self.assertAlmostEqual(stats["variance"], 2 / 3)
         self.assertAlmostEqual(stats["median"], 1.0)
         self.assertAlmostEqual(stats["iqr"], 1.0)
+        self.assertAlmostEqual(stats["p95"], 1.9)
         self.assertAlmostEqual(percentile([0, 10], 25), 2.5)
 
     def test_judge_model_core_embedding_distance_formulas(self) -> None:
@@ -546,6 +548,274 @@ class CoreTests(unittest.TestCase):
         self.assertIn("2. 54::r001", output)
         self.assertIn("Warnings: fragmentary", output)
 
+    def test_run_config_formats_score_statistics(self) -> None:
+        summary = {
+            "metric": "final_distance_coverage_sensitive",
+            "overall": {
+                "count": 2,
+                "mean": 0.2,
+                "variance": 0.01,
+                "stddev": 0.1,
+                "median": 0.2,
+                "iqr": 0.1,
+                "min": 0.1,
+                "p95": 0.29,
+                "max": 0.3,
+            },
+            "metrics": {
+                "global_distance": {
+                    "count": 2,
+                    "mean": 0.15,
+                    "variance": 0.0025,
+                    "stddev": 0.05,
+                    "median": 0.15,
+                    "iqr": 0.05,
+                    "min": 0.1,
+                    "p95": 0.195,
+                    "max": 0.2,
+                },
+                "coverage_distance": {
+                    "count": 2,
+                    "mean": 0.25,
+                    "variance": 0.0025,
+                    "stddev": 0.05,
+                    "median": 0.25,
+                    "iqr": 0.05,
+                    "min": 0.2,
+                    "p95": 0.295,
+                    "max": 0.3,
+                },
+            },
+        }
+
+        output = format_score_statistics(summary)
+
+        self.assertIn("Overall score (final_distance_coverage_sensitive):", output)
+        self.assertIn("mean=0.2", output)
+        self.assertIn("variance=0.01", output)
+        self.assertIn("standard_deviation=0.1", output)
+        self.assertIn("Subindex statistics:", output)
+        self.assertIn("global_distance", output)
+        self.assertIn("coverage_distance", output)
+        self.assertIn("median", output)
+        self.assertIn("iqr", output)
+        self.assertIn("min", output)
+        self.assertIn("p95", output)
+        self.assertIn("max", output)
+
+    def test_run_config_formats_reliable_n_statistics(self) -> None:
+        reliable_n = {
+            "num_resamplings": 5,
+            "n_star_mean": 2,
+            "n_star_variance": 3,
+            "n_star_all_moments": 4,
+            "n_star_used": 4,
+            "reliability_achieved": True,
+            "proxy_budget_exhausted": False,
+            "selected_resampling_ids": ["0", "2", "4", "5"],
+            "source": {
+                "metric": "final_distance_coverage_sensitive",
+                "aggregation": "mean score per resampling",
+            },
+            "curves": [
+                {"n": 1},
+                {"n": 2},
+                {"n": 3},
+                {"n": 4},
+                {"n": 5},
+            ],
+        }
+
+        output = format_reliable_n_statistics(reliable_n)
+
+        self.assertIn("ReliableEval N statistics", output)
+        self.assertIn("Metric: final_distance_coverage_sensitive", output)
+        self.assertNotIn("N estimates:", output)
+        self.assertNotIn("n_star_mean=2", output)
+        self.assertNotIn("n_star_variance=3", output)
+        self.assertNotIn("n_star_all_moments=4", output)
+        self.assertNotIn("n_star_used=4", output)
+        self.assertIn("Selected resampling count: 4", output)
+        self.assertIn("Reliability status: ACHIEVED", output)
+        self.assertIn("Proxy budget exhausted: False", output)
+        self.assertIn("Resolved N estimate summary:", output)
+        self.assertIn("mean=3.25", output)
+        self.assertIn("median=3.5", output)
+        self.assertIn("variance=0.6875", output)
+        self.assertIn("p95=4", output)
+        self.assertIn("max=4", output)
+        self.assertIn("Evaluated N curve range:", output)
+        self.assertIn("p95=4.8", output)
+        self.assertIn("max=5", output)
+
+        budget_limited = dict(reliable_n)
+        budget_limited["proxy_budget_exhausted"] = True
+        budget_limited["reliability_achieved"] = False
+        budget_limited_output = format_reliable_n_statistics(budget_limited)
+        self.assertIn("Reliability status: NOT ACHIEVED (proxy resampling cap reached)", budget_limited_output)
+        self.assertIn("Proxy budget exhausted: True", budget_limited_output)
+        self.assertIn("NOT evidence that reliability was achieved", budget_limited_output)
+
+        legacy_budget_limited = dict(reliable_n)
+        legacy_budget_limited.pop("proxy_budget_exhausted")
+        legacy_budget_limited["n_star_all_moments"] = 5
+        legacy_budget_limited["n_star_used"] = 5
+        legacy_budget_limited["reliability_achieved"] = True
+        legacy_output = format_reliable_n_statistics(legacy_budget_limited)
+        self.assertIn("Reliability status: NOT ACHIEVED (proxy resampling cap reached)", legacy_output)
+        self.assertIn("Proxy budget exhausted: True", legacy_output)
+
+    def test_run_config_stage_flags_map_to_step_overrides(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(["--config", "run.json"])
+        self.assertIsNone(stage_step_overrides(args))
+
+        args = parser.parse_args(["--config", "run.json", "--run_model", "--compute_scores"])
+        self.assertEqual(
+            stage_step_overrides(args),
+            {
+                "generate_variants": False,
+                "run_model": True,
+                "judge_responses": False,
+                "estimate_n": True,
+                "analyze_scores": True,
+            },
+        )
+
+        args = parser.parse_args(["--config", "run.json", "--generate-variants", "--run-judge"])
+        self.assertEqual(
+            stage_step_overrides(args),
+            {
+                "generate_variants": True,
+                "run_model": False,
+                "judge_responses": True,
+                "estimate_n": False,
+                "analyze_scores": False,
+            },
+        )
+
+    def test_partial_run_with_null_run_id_reuses_latest_matching_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            logs_dir = root / "logs"
+            older = logs_dir / "partial-progress-test-20260101T000000Z"
+            newer_empty = logs_dir / "partial-progress-test-20260102T000000Z"
+            older.mkdir(parents=True)
+            newer_empty.mkdir(parents=True)
+            (older / "scores.json").write_text('{"scores": []}', encoding="utf-8")
+            config = {
+                "run_name": "partial-progress-test",
+                "logs": {"dir": str(logs_dir), "run_id": None},
+                "outputs": {
+                    "variants": "variants.json",
+                    "responses": "responses.json",
+                    "scores": "scores.json",
+                    "selected_scores": "selected_scores.json",
+                    "summary_json": "summary.json",
+                    "summary_csv": "summary.csv",
+                    "reliable_n": "reliable_n.json",
+                    "combined": "outputs.json",
+                    "resolved_config": "config.resolved.json",
+                },
+                "steps": {
+                    "generate_variants": False,
+                    "run_model": False,
+                    "judge_responses": False,
+                    "estimate_n": True,
+                    "analyze_scores": True,
+                },
+            }
+
+            self.assertEqual(_prepare_run_dir(config), older)
+
+    def test_partial_run_with_null_run_id_errors_when_artifacts_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = {
+                "run_name": "partial-progress-test",
+                "logs": {"dir": str(root / "logs"), "run_id": None},
+                "outputs": {
+                    "variants": "variants.json",
+                    "responses": "responses.json",
+                    "scores": "scores.json",
+                    "selected_scores": "selected_scores.json",
+                    "summary_json": "summary.json",
+                    "summary_csv": "summary.csv",
+                    "reliable_n": "reliable_n.json",
+                    "combined": "outputs.json",
+                    "resolved_config": "config.resolved.json",
+                },
+                "steps": {
+                    "generate_variants": False,
+                    "run_model": False,
+                    "judge_responses": False,
+                    "estimate_n": True,
+                    "analyze_scores": True,
+                },
+            }
+
+            with self.assertRaisesRegex(ValueError, "Partial run requires existing artifact"):
+                _prepare_run_dir(config)
+
+    def test_load_run_config_applies_step_overrides_before_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_path = root / "run.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "run_name": "partial-progress-test",
+                        "benchmark": {"path": "benchmark.json"},
+                        "logs": {"dir": str(root / "logs"), "run_id": "fixed"},
+                        "steps": {
+                            "generate_variants": True,
+                            "run_model": True,
+                            "judge_responses": True,
+                            "estimate_n": True,
+                            "analyze_scores": True,
+                        },
+                        "rewriter": {
+                            "provider": "openai-compatible",
+                            "model": "fake-rewriter",
+                            "base_url": "http://localhost:8000/v1",
+                            "temperature": 0,
+                            "max_tokens": 128,
+                            "timeout": 1,
+                            "retries": 0,
+                            "json_mode": True,
+                            "max_rewrite_attempts": 0,
+                        },
+                        "model": {"provider": "openai-compatible", "model": ""},
+                        "judge": {"provider": "openai-compatible", "model": ""},
+                        "reliable_eval": {"proxy_resampling_budget": 1, "min_proxy_resamplings": 1},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = load_run_config(
+                config_path,
+                step_overrides={
+                    "generate_variants": True,
+                    "run_model": False,
+                    "judge_responses": False,
+                    "estimate_n": False,
+                    "analyze_scores": False,
+                },
+            )
+
+        self.assertEqual(
+            config["steps"],
+            {
+                "generate_variants": True,
+                "run_model": False,
+                "judge_responses": False,
+                "analyze_scores": False,
+                "estimate_n": False,
+            },
+        )
+
     def test_qwen_sample_config_uses_judge_model_core_metric(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]
         config = load_run_config(repo_root / "configs" / "qwen-14b-10-samples.local.json")
@@ -869,6 +1139,10 @@ class CoreTests(unittest.TestCase):
 
         self.assertEqual(reliable_n["n_star_all_moments"], 1)
         self.assertEqual(reliable_n["source"]["metric"], "final_distance_coverage_sensitive")
+        self.assertFalse(reliable_n["proxy_budget_exhausted"])
+        self.assertTrue(reliable_n["reliability_achieved"])
+        self.assertEqual(reliable_n["reliability_status"], "achieved")
+        self.assertEqual(selected_scores["selection"]["reliability_status"], "achieved")
         self.assertEqual(selected_scores["selection"]["n_star_used"], 1)
         self.assertEqual(len(selected_scores["scores"]), 1)
         self.assertEqual(summary["metric"], "final_distance_coverage_sensitive")

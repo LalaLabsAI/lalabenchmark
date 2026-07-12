@@ -65,6 +65,7 @@ def describe(values: Iterable[float]) -> dict[str, Any]:
             "median": None,
             "iqr": None,
             "min": None,
+            "p95": None,
             "max": None,
         }
     variance = population_variance(vals)
@@ -76,6 +77,7 @@ def describe(values: Iterable[float]) -> dict[str, Any]:
         "median": percentile(vals, 50),
         "iqr": percentile(vals, 75) - percentile(vals, 25),
         "min": min(vals),
+        "p95": percentile(vals, 95),
         "max": max(vals),
     }
 
@@ -133,7 +135,7 @@ def write_summary_csv(path: str | Path, summary: dict[str, Any]) -> None:
     rows.extend((name, stats) for name, stats in summary.get("metrics", {}).items())
     with target.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["metric", "count", "mean", "variance", "stddev", "median", "iqr", "min", "max"])
+        writer.writerow(["metric", "count", "mean", "variance", "stddev", "median", "iqr", "min", "p95", "max"])
         for name, stats in rows:
             writer.writerow(
                 [
@@ -145,6 +147,7 @@ def write_summary_csv(path: str | Path, summary: dict[str, Any]) -> None:
                     stats["median"],
                     stats["iqr"],
                     stats["min"],
+                    stats["p95"],
                     stats["max"],
                 ]
             )

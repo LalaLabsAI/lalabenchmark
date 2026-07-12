@@ -65,6 +65,8 @@ python -m reliable_eval.cli.run_config \
 
 `--workers` controls parallel rewrite, model, and judge requests. It defaults to `16`; lower it if your providers rate-limit the run.
 
+Partial-progress runs can override the configured stages with `--generate_variants`, `--run_model`, `--run_judge`, and `--compute_scores`. If any of these flags is passed, only the selected stages run; skipped dependencies are loaded from the existing run artifacts. When `logs.run_id` is `null`, a partial run that needs existing artifacts automatically reuses the newest matching run directory that contains those artifacts, so `--compute_scores` can rerun against the latest completed `scores.json`. `--compute_scores` runs ReliableEval selection and score analysis, then prints overall score statistics plus mean, variance, standard deviation, median, IQR, min, p95, and max for every score subindex. It also prints ReliableEval N details, including selected resampling count, descriptive statistics over the resolved N estimates including p95 and max, and whether the N estimate only reached the proxy resampling budget. If N only reaches the proxy cap, the printed reliability status is `NOT ACHIEVED`. Raw `n_star_*` values remain in `reliable_n.json` for debugging.
+
 The Qwen config uses OpenRouter for the rewriter, benchmark model, and evaluator model:
 
 ```json

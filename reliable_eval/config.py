@@ -129,11 +129,13 @@ DEFAULT_RUN_CONFIG: dict[str, Any] = {
 }
 
 
-def load_run_config(path: str | Path) -> dict[str, Any]:
+def load_run_config(path: str | Path, *, step_overrides: dict[str, bool] | None = None) -> dict[str, Any]:
     raw = load_json(path)
     if not isinstance(raw, dict):
         raise ValueError("Run config must be a JSON object")
     config = _deep_merge(deepcopy(DEFAULT_RUN_CONFIG), raw)
+    if step_overrides is not None:
+        _apply_step_overrides(config, step_overrides)
     _validate_config(config)
     return config
 
@@ -145,6 +147,16 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             base[key] = value
     return base
+
+
+def _apply_step_overrides(config: dict[str, Any], step_overrides: dict[str, bool]) -> None:
+    steps = config.setdefault("steps", {})
+    if not isinstance(steps, dict):
+        raise ValueError("steps must be an object")
+    for key, value in step_overrides.items():
+        if key not in DEFAULT_RUN_CONFIG["steps"]:
+            raise ValueError(f"unknown pipeline step override: {key}")
+        steps[key] = bool(value)
 
 
 def _validate_config(config: dict[str, Any]) -> None:

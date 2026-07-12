@@ -92,11 +92,12 @@ def run_configured_pipeline(
     *,
     workers: int = 16,
     echo: bool = True,
+    step_overrides: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     if workers < 1:
         raise ValueError("workers must be >= 1")
     config_path = Path(config_path)
-    config = load_run_config(config_path)
+    config = load_run_config(config_path, step_overrides=step_overrides)
     run_dir = _prepare_run_dir(config)
     output_paths = _output_paths(config, run_dir)
     logger = RunLogger(run_dir / "run.log", run_dir / "events.jsonl", echo=echo)
@@ -126,6 +127,8 @@ def run_configured_pipeline(
                 "config_path": str(config_path),
                 "run_dir": str(run_dir),
                 "workers": workers,
+                "steps": config["steps"],
+                "step_overrides": step_overrides,
                 "outputs": {key: str(path) for key, path in output_paths.items()},
             },
         )
@@ -190,7 +193,7 @@ def run_configured_pipeline(
 
         if config["steps"].get("estimate_n"):
             if scores is None:
-                raise ValueError("estimate_n requires generated or existing scores")
+                raise ValueError(f"estimate_n requires generated or existing scores at {output_paths['scores']}")
             reliable_n, selected_scores = _estimate_n(
                 config,
                 scores,
@@ -231,6 +234,7 @@ def run_configured_pipeline(
         return {
             "run_dir": str(run_dir),
             "outputs": {key: str(path) for key, path in output_paths.items()},
+            "steps": dict(config["steps"]),
         }
     finally:
         logger.close()
@@ -238,10 +242,60 @@ def run_configured_pipeline(
 
 def _prepare_run_dir(config: dict[str, Any]) -> Path:
     logs_dir = _path_from_config(config["logs"]["dir"])
-    run_id = config["logs"].get("run_id") or _default_run_id(str(config.get("run_name", "lala-run")))
+    run_id = config["logs"].get("run_id")
+    if not run_id:
+        required_outputs = _required_existing_output_groups(config)
+        if required_outputs:
+            existing_run_dir = _latest_run_dir_with_outputs(config, logs_dir, required_outputs)
+            if existing_run_dir is not None:
+                return existing_run_dir
+            required_text = ", ".join(" or ".join(group) for group in required_outputs)
+            raise ValueError(
+                f"Partial run requires existing artifact(s): {required_text}. "
+                "Set logs.run_id to the run you want to resume, or run the earlier pipeline stages first."
+            )
+        run_id = _default_run_id(str(config.get("run_name", "lala-run")))
     run_dir = logs_dir / str(run_id)
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
+
+
+def _required_existing_output_groups(config: dict[str, Any]) -> list[tuple[str, ...]]:
+    steps = config["steps"]
+    groups: list[tuple[str, ...]] = []
+    if steps.get("run_model") and not steps.get("generate_variants"):
+        groups.append(("variants",))
+    if steps.get("judge_responses") and not steps.get("run_model"):
+        groups.append(("responses",))
+    if steps.get("estimate_n") and not steps.get("judge_responses"):
+        groups.append(("scores",))
+    if steps.get("analyze_scores") and not steps.get("estimate_n") and not steps.get("judge_responses"):
+        groups.append(("selected_scores", "scores"))
+    return groups
+
+
+def _latest_run_dir_with_outputs(
+    config: dict[str, Any],
+    logs_dir: Path,
+    required_output_groups: list[tuple[str, ...]],
+) -> Path | None:
+    if not logs_dir.exists():
+        return None
+    slug = _run_name_slug(str(config.get("run_name", "lala-run")))
+    candidates = [path for path in logs_dir.iterdir() if path.is_dir() and path.name.startswith(f"{slug}-")]
+    candidates.sort(key=lambda path: (path.stat().st_mtime, path.name), reverse=True)
+    for candidate in candidates:
+        output_paths = _output_paths(config, candidate)
+        if _has_required_outputs(output_paths, required_output_groups):
+            return candidate
+    return None
+
+
+def _has_required_outputs(output_paths: dict[str, Path], required_output_groups: list[tuple[str, ...]]) -> bool:
+    for group in required_output_groups:
+        if not any(output_paths[key].exists() for key in group):
+            return False
+    return True
 
 
 def _output_paths(config: dict[str, Any], run_dir: Path) -> dict[str, Path]:
@@ -257,12 +311,14 @@ def _path_from_config(value: Any) -> Path:
 
 
 def _default_run_id(run_name: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", run_name.strip().lower()).strip("-")
-    if not slug:
-        slug = "lala-run"
+    slug = _run_name_slug(run_name)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"{slug}-{stamp}"
 
+
+def _run_name_slug(run_name: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9._-]+", "-", run_name.strip().lower()).strip("-")
+    return slug or "lala-run"
 
 
 def _rewrite_item_variants_job(
@@ -1110,11 +1166,15 @@ def _estimate_n(
         seed=int(reliable_config["seed"]),
     )
     resampling_ids = _resampling_ids(records)
-    n_star = result.get("n_star_all_moments")
-    reliability_achieved = n_star is not None
-    if n_star is None:
-        n_star = len(resampling_ids)
-    n_star = min(int(n_star), len(resampling_ids))
+    proxy_resampling_count = len(resampling_ids)
+    n_star_estimate = result.get("n_star_all_moments")
+    n_star_hits_proxy_budget = n_star_estimate is None or int(n_star_estimate) >= proxy_resampling_count
+    reliability_achieved = n_star_estimate is not None and int(n_star_estimate) < proxy_resampling_count
+    reliability_status = "achieved" if reliability_achieved else "proxy_budget_exhausted"
+    if n_star_estimate is None:
+        n_star = proxy_resampling_count
+    else:
+        n_star = min(int(n_star_estimate), proxy_resampling_count)
     selected_ids = _select_resampling_ids(
         resampling_ids,
         n_star=n_star,
@@ -1127,6 +1187,9 @@ def _estimate_n(
         "n_star_all_moments": result.get("n_star_all_moments"),
         "n_star_used": n_star,
         "reliability_achieved": reliability_achieved,
+        "reliability_status": reliability_status,
+        "n_star_hits_proxy_budget": n_star_hits_proxy_budget,
+        "proxy_budget_exhausted": n_star_hits_proxy_budget,
     }
 
     result["source"] = {
@@ -1139,10 +1202,15 @@ def _estimate_n(
     result["selected_resampling_ids"] = selected_ids
     result["n_star_used"] = n_star
     result["reliability_achieved"] = reliability_achieved
+    result["reliability_status"] = reliability_status
+    result["n_star_hits_proxy_budget"] = n_star_hits_proxy_budget
+    result["proxy_budget_exhausted"] = n_star_hits_proxy_budget
     if not reliability_achieved:
-        result["warnings"] = [
-            "n_star_all_moments_not_reached_within_proxy_resampling_budget; using all scored proxy resamplings"
-        ]
+        if n_star_estimate is None:
+            warning = "n_star_all_moments_not_reached_within_proxy_resampling_budget; using all scored proxy resamplings"
+        else:
+            warning = "n_star_all_moments_only_reached_at_proxy_resampling_budget; using all scored proxy resamplings"
+        result["warnings"] = [warning]
 
     dump_json(out_path, result)
     dump_json(selected_scores_path, selected_scores)

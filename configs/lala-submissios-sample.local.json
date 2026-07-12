@@ -18,7 +18,7 @@
   "eval": {
     "resume": true,
     "checkpoint_every": 1,
-    "limit_items": 5
+    "limit_items": 10
   },
   "rewriter": {
     "provider": "openai-compatible",
@@ -61,7 +61,7 @@
     "metric": "final_distance_coverage_sensitive",
     "epsilon": 0.01,
     "delta": 0.1,
-    "proxy_resampling_budget": 3,
+    "proxy_resampling_budget": 10,
     "min_proxy_resamplings": 3,
     "exhaustive_until": 2,
     "samples_per_n": 5000,
