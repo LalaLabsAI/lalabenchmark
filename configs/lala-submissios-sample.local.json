@@ -1,7 +1,7 @@
 {
   "run_name": "lala-submissios-sample-reliableeval",
   "benchmark": {
-    "path": "lala-submissios-sample.json",
+    "path": "sample.json",
     "label_map": null
   },
   "logs": {

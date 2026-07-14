@@ -53,6 +53,15 @@ Judge retry controls are separated by failure type: `judge.retries` retries indi
 
 Config files live in `configs/`. Each run writes artifacts under `logs/<run-id>/`.
 
+The runner performs startup checks before it creates a run directory or contacts a model provider. Missing datasets and API keys produce actionable warnings. For example, dataset paths come from `benchmark.path`, and OpenRouter credentials normally come from `OPENROUTER_API_KEY`:
+
+```bash
+export OPENROUTER_API_KEY="your-openrouter-api-key"
+export OPENAI_API_KEY="your-openai-api-key"
+```
+
+If a dataset warning shows the wrong expected path, either put the JSON dataset at that path or edit `benchmark.path` in the config. Relative paths are resolved from the directory where the command is run. If an API-key warning names a missing variable, export it as shown by the warning; if you use a differently named variable, update the relevant `api_key_env` field in the config.
+
 For the OpenRouter Qwen 14B 10-sample config, set both API keys and run:
 
 ```bash

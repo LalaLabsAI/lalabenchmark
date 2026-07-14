@@ -1,6 +1,20 @@
 # lalabenchmark
 
-See RUNBOOK.md for the ReliableEval benchmark pipeline.
+See RUNBOOK.md for the full ReliableEval benchmark pipeline.
+
+## Quick start
+
+This project has no third-party Python dependencies. The included config uses `sample.json`, so you only need to provide the API keys:
+
+```bash
+export OPENROUTER_API_KEY="your-openrouter-api-key"
+export OPENAI_API_KEY="your-openai-api-key"
+python -m reliable_eval.cli.run_config \
+  --config configs/lala-submissios-sample.local.json \
+  --workers 4
+```
+
+Before creating a run, the command checks every input needed by the selected stages. If the dataset, label map, or an API-key environment variable is missing, it stops with a `WARNING` that shows the expected path or variable and the exact config setting or shell command to change. Relative dataset paths are resolved from the directory where you run the command.
 
 Config-based runs are supported with:
 
@@ -89,4 +103,3 @@ Useful options:
 ## Judge Retries
 
 `judge.max_score_retries` retries the full per-response judge scoring job if the judge still fails after JSON repair attempts. `judge.retries` remains the per-request HTTP retry count.
-

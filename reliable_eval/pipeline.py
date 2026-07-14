@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
+import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
-
-from tqdm import tqdm
+from typing import Any, Callable, TextIO
 
 from .benchmark import BenchmarkItem, load_benchmark
 from .config import load_run_config
@@ -24,6 +25,180 @@ from .variants import deterministic_candidates, manifest_jobs, validate_variant
 
 CONFIG_RUN_SCHEMA_VERSION = "lala-reliableeval-config-run-v1"
 MODEL_RESPONSES_SCHEMA_VERSION = "lala-reliableeval-model-responses-v1"
+
+
+class StartupCheckError(ValueError):
+    """Raised after actionable startup warnings have been printed."""
+
+
+def _startup_warnings(
+    config: dict[str, Any],
+    config_path: str | Path,
+    *,
+    environ: dict[str, str] | None = None,
+    cwd: str | Path | None = None,
+) -> list[str]:
+    environment = os.environ if environ is None else environ
+    working_directory = Path.cwd() if cwd is None else Path(cwd)
+    config_file = Path(config_path).expanduser().resolve()
+    steps = config["steps"]
+    warnings: list[str] = []
+
+    if steps.get("generate_variants") or steps.get("judge_responses"):
+        configured_dataset = str(config["benchmark"]["path"])
+        dataset_path = _resolved_runtime_path(configured_dataset, working_directory)
+        if not dataset_path.is_file():
+            warnings.append(
+                "\n".join(
+                    [
+                        "WARNING: Dataset not found.",
+                        f"  Expected dataset: {dataset_path}",
+                        f"  Config setting: benchmark.path = {configured_dataset!r}",
+                        f"  Config file: {config_file}",
+                        f"  Relative paths are resolved from: {working_directory.resolve()}",
+                        "  What to do:",
+                        f"    1. Put the dataset at {dataset_path}; or",
+                        f"    2. Edit \"benchmark.path\" in {config_file} so it points to your dataset.",
+                    ]
+                )
+            )
+
+        configured_label_map = config["benchmark"].get("label_map")
+        if configured_label_map:
+            label_map_path = _resolved_runtime_path(str(configured_label_map), working_directory)
+            if not label_map_path.is_file():
+                warnings.append(
+                    "\n".join(
+                        [
+                            "WARNING: Configured label map not found.",
+                            f"  Expected label map: {label_map_path}",
+                            f"  Config setting: benchmark.label_map = {configured_label_map!r}",
+                            f"  What to do: create that file, correct \"benchmark.label_map\" in {config_file}, or set it to null.",
+                        ]
+                    )
+                )
+
+    enabled_model_sections = []
+    if steps.get("generate_variants"):
+        enabled_model_sections.append("rewriter")
+    if steps.get("run_model"):
+        enabled_model_sections.append("model")
+    if steps.get("judge_responses"):
+        enabled_model_sections.extend(["judge", "embedding"])
+
+    missing_key_sections: dict[str, list[str]] = {}
+    openrouter_without_key_setting: list[str] = []
+    for section_name in enabled_model_sections:
+        section = config[section_name]
+        if str(section.get("provider", "")).strip().lower() != "openai-compatible":
+            continue
+        env_name = str(section.get("api_key_env") or "").strip()
+        base_url = str(section.get("base_url") or "").lower()
+        if env_name:
+            if not str(environment.get(env_name, "")).strip():
+                missing_key_sections.setdefault(env_name, []).append(section_name)
+        elif "openrouter.ai" in base_url:
+            openrouter_without_key_setting.append(section_name)
+
+    for env_name, section_names in missing_key_sections.items():
+        config_settings = ", ".join(f"{name}.api_key_env" for name in section_names)
+        warnings.append(
+            "\n".join(
+                [
+                    f"WARNING: Required API key environment variable {env_name} is not set or is empty.",
+                    f"  Used by enabled config sections: {', '.join(section_names)}",
+                    f"  Config setting(s): {config_settings}",
+                    "  What to do (macOS/Linux):",
+                    f"    export {env_name}=\"your-api-key\"",
+                    "  Then run the same command again.",
+                    f"  If your provider uses a different variable, edit the api_key_env setting(s) in {config_file}.",
+                ]
+            )
+        )
+
+    if openrouter_without_key_setting:
+        settings = ", ".join(f"{name}.api_key_env" for name in openrouter_without_key_setting)
+        warnings.append(
+            "\n".join(
+                [
+                    "WARNING: OpenRouter is configured, but no API key environment variable is configured.",
+                    f"  Affected config sections: {', '.join(openrouter_without_key_setting)}",
+                    f"  What to do: set {settings} to \"OPENROUTER_API_KEY\" in {config_file}, then run:",
+                    "    export OPENROUTER_API_KEY=\"your-api-key\"",
+                ]
+            )
+        )
+
+    return warnings
+
+
+def _resolved_runtime_path(value: str, cwd: Path) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = cwd / path
+    return path.resolve()
+
+
+def _run_startup_checks(config: dict[str, Any], config_path: str | Path) -> None:
+    warnings = _startup_warnings(config, config_path)
+    if not warnings:
+        return
+    print("\n\n".join(warnings), file=sys.stderr)
+    raise StartupCheckError(
+        f"Startup checks found {len(warnings)} problem(s). Fix the instructions above, then run the same command again."
+    )
+
+
+class _ProgressBar:
+    def __init__(
+        self,
+        total: int,
+        description: str,
+        unit: str,
+        *,
+        enabled: bool = True,
+        width: int = 30,
+        stream: TextIO | None = None,
+    ) -> None:
+        self.total = max(0, total)
+        self.description = description
+        self.unit = unit
+        self.enabled = enabled
+        self.width = max(1, width)
+        self.stream = stream or sys.stdout
+        self.completed = 0
+        self._rendered_length = 0
+        self._lock = threading.Lock()
+        if self.enabled:
+            self._render("")
+
+    def update(self, detail: str = "") -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self.completed = min(self.completed + 1, self.total)
+            self._render(detail)
+
+    def close(self) -> None:
+        if not self.enabled:
+            return
+        with self._lock:
+            self.stream.write("\n")
+            self.stream.flush()
+
+    def _render(self, detail: str) -> None:
+        fraction = self.completed / self.total if self.total else 1.0
+        filled = round(self.width * fraction)
+        bar = "#" * filled + "-" * (self.width - filled)
+        suffix = f" {detail}" if detail else ""
+        line = (
+            f"\r{self.description} [{bar}] {self.completed}/{self.total} "
+            f"{self.unit} ({fraction:>6.1%}){suffix}"
+        )
+        padding = " " * max(0, self._rendered_length - len(line))
+        self.stream.write(line + padding)
+        self.stream.flush()
+        self._rendered_length = len(line)
 
 REWRITE_STYLES = [
     {
@@ -98,6 +273,7 @@ def run_configured_pipeline(
         raise ValueError("workers must be >= 1")
     config_path = Path(config_path)
     config = load_run_config(config_path, step_overrides=step_overrides)
+    _run_startup_checks(config, config_path)
     run_dir = _prepare_run_dir(config)
     output_paths = _output_paths(config, run_dir)
     logger = RunLogger(run_dir / "run.log", run_dir / "events.jsonl", echo=echo)
@@ -701,11 +877,15 @@ def _generate_variants(
             "note": "Progress advances after each rewrite slot is accepted or finally skipped; skipped slots may be retried to reach the target rewrite count.",
         },
     )
-    progress = tqdm(total=len(items) * proxy_budget, desc="variants", unit="rewrite", disable=not logger.echo)
+    progress = _ProgressBar(
+        total=len(items) * proxy_budget,
+        description="variants",
+        unit="rewrites",
+        enabled=logger.echo,
+    )
 
     def update_rewrite_progress(done_item: BenchmarkItem, done_resampling_id: int, _variant: dict[str, Any]) -> None:
-        progress.set_postfix_str(f"item={done_item.id} r={done_resampling_id}", refresh=False)
-        progress.update(1)
+        progress.update(f"item={done_item.id} r={done_resampling_id}")
     futures = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
         for item in items:
@@ -868,7 +1048,12 @@ def _run_model(
         },
     )
 
-    progress = tqdm(total=len(pending_jobs), desc="model", unit="call", disable=not logger.echo)
+    progress = _ProgressBar(
+        total=len(pending_jobs),
+        description="model",
+        unit="calls",
+        enabled=logger.echo,
+    )
 
     futures = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -888,8 +1073,7 @@ def _run_model(
                 raise
             output["responses"].append(row)
             existing.add(key)
-            progress.set_postfix_str(f"resampling={job['resampling_id']} item={job['item_id']}", refresh=False)
-            progress.update(1)
+            progress.update(f"resampling={job['resampling_id']} item={job['item_id']}")
             logger.log(
                 "model",
                 f"Model response for resampling={job['resampling_id']} item={job['item_id']} ({index}/{len(jobs)})",
@@ -1009,7 +1193,12 @@ def _judge_responses(
         },
     )
 
-    progress = tqdm(total=len(pending_rows), desc="judge", unit="score", disable=not logger.echo)
+    progress = _ProgressBar(
+        total=len(pending_rows),
+        description="judge",
+        unit="scores",
+        enabled=logger.echo,
+    )
 
     futures = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -1041,8 +1230,7 @@ def _judge_responses(
                 raise
             output["scores"].append(score_row)
             existing.add(key)
-            progress.set_postfix_str(f"resampling={row['resampling_id']} item={row['item_id']}", refresh=False)
-            progress.update(1)
+            progress.update(f"resampling={row['resampling_id']} item={row['item_id']}")
             logger.log(
                 "judge",
                 f"Score for resampling={row['resampling_id']} item={row['item_id']} ({index}/{len(rows)})",

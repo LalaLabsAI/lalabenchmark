@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
@@ -11,7 +12,7 @@ from reliable_eval.benchmark import BenchmarkItem, load_benchmark
 from reliable_eval.cli.print_rewrites import extract_variants_manifest, format_rewrites
 from reliable_eval.cli.run_config import build_parser, format_reliable_n_statistics, format_score_statistics, stage_step_overrides
 from reliable_eval.config import load_run_config
-from reliable_eval.pipeline import _judge_response_job, _prepare_run_dir, _rewrite_item_variants_job, _rewrite_prompt_job, run_configured_pipeline
+from reliable_eval.pipeline import _ProgressBar, _judge_response_job, _prepare_run_dir, _rewrite_item_variants_job, _rewrite_prompt_job, _startup_warnings, run_configured_pipeline
 from reliable_eval.reliable import estimate_reliable_sample_size
 from reliable_eval.scoring import judge_response
 from reliable_eval.statistics import describe, percentile
@@ -55,6 +56,70 @@ class FakeEvaluatorClient:
 
 
 class CoreTests(unittest.TestCase):
+    def test_startup_warnings_explain_how_to_fix_missing_dataset_and_api_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_path = root / "configs" / "run.json"
+            config = {
+                "benchmark": {"path": "data/benchmark.json", "label_map": None},
+                "steps": {
+                    "generate_variants": True,
+                    "run_model": True,
+                    "judge_responses": True,
+                },
+                "rewriter": {
+                    "provider": "openai-compatible",
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "api_key_env": "OPENROUTER_API_KEY",
+                },
+                "model": {
+                    "provider": "openai-compatible",
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "api_key_env": "OPENROUTER_API_KEY",
+                },
+                "judge": {
+                    "provider": "openai-compatible",
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "api_key_env": "OPENROUTER_API_KEY",
+                },
+                "embedding": {
+                    "provider": "openai-compatible",
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key_env": "OPENAI_API_KEY",
+                },
+            }
+
+            warnings = _startup_warnings(config, config_path, environ={}, cwd=root)
+
+        self.assertEqual(len(warnings), 3)
+        self.assertIn(f"Expected dataset: {root / 'data' / 'benchmark.json'}", warnings[0])
+        self.assertIn('Edit "benchmark.path"', warnings[0])
+        self.assertIn("export OPENROUTER_API_KEY=\"your-api-key\"", warnings[1])
+        self.assertIn("rewriter, model, judge", warnings[1])
+        self.assertIn("export OPENAI_API_KEY=\"your-api-key\"", warnings[2])
+
+    def test_startup_warnings_only_check_resources_needed_by_selected_steps(self) -> None:
+        config = {
+            "benchmark": {"path": "missing.json", "label_map": None},
+            "steps": {
+                "generate_variants": False,
+                "run_model": False,
+                "judge_responses": False,
+            },
+        }
+        self.assertEqual(_startup_warnings(config, "run.json", environ={}, cwd="/tmp"), [])
+
+    def test_progress_bar_renders_completion_without_third_party_dependencies(self) -> None:
+        output = io.StringIO()
+        progress = _ProgressBar(2, "model", "calls", width=10, stream=output)
+        progress.update("item=first")
+        progress.update("item=second")
+        progress.close()
+
+        rendered = output.getvalue()
+        self.assertIn("model [##########] 2/2 calls (100.0%) item=second", rendered)
+        self.assertTrue(rendered.endswith("\n"))
+
     def test_load_benchmark_sample_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "benchmark.json"

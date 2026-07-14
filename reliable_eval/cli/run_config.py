@@ -240,12 +240,15 @@ def _format_stat(value: Any) -> str:
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
-    result = run_configured_pipeline(
-        args.config,
-        workers=args.workers,
-        echo=not args.quiet,
-        step_overrides=stage_step_overrides(args),
-    )
+    try:
+        result = run_configured_pipeline(
+            args.config,
+            workers=args.workers,
+            echo=not args.quiet,
+            step_overrides=stage_step_overrides(args),
+        )
+    except (OSError, ValueError) as exc:
+        parser.exit(2, f"\nERROR: {exc}\n")
     print_score_statistics_if_available(result)
     print_reliable_n_statistics_if_available(result)
     print(f"Run directory: {result['run_dir']}")

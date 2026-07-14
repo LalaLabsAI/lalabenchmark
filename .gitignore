@@ -5,4 +5,4 @@ artifacts/
 lala-submissios-sample.json
 logs/*
 !logs/.gitkeep
-
+.venv
