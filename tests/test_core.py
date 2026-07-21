@@ -760,6 +760,13 @@ class CoreTests(unittest.TestCase):
             },
         )
 
+    def test_run_config_num_samples_flag(self) -> None:
+        parser = build_parser()
+
+        args = parser.parse_args(["--config", "run.json", "--num_samples", "7"])
+
+        self.assertEqual(args.num_samples, 7)
+
     def test_partial_run_with_null_run_id_reuses_latest_matching_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -880,6 +887,20 @@ class CoreTests(unittest.TestCase):
                 "estimate_n": False,
             },
         )
+
+    def test_num_samples_overrides_config_limit_items(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+
+        config = load_run_config(repo_root / "configs" / "qwen-14b-10-samples.local.json", num_samples=3)
+
+        self.assertEqual(config["eval"]["limit_items"], 3)
+
+    def test_qwen_full_config_uses_all_full_normalized_items(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        config = load_run_config(repo_root / "configs" / "qwen-14b-full.json")
+
+        self.assertEqual(config["benchmark"]["path"], "full_normalized.json")
+        self.assertIsNone(config["eval"]["limit_items"])
 
     def test_qwen_sample_config_uses_judge_model_core_metric(self) -> None:
         repo_root = Path(__file__).resolve().parents[1]

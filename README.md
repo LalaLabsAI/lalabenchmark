@@ -22,6 +22,8 @@ Config-based runs are supported with:
 python -m reliable_eval.cli.run_config --config configs/lala-submissios-sample.local.json --workers 16
 ```
 
+To temporarily run only the first N benchmark examples, pass `--num_samples N`. This command-line value overrides `eval.limit_items` from the config.
+
 For partial progress, pass one or more stage flags: `--generate_variants`, `--run_model`, `--run_judge`, and `--compute_scores`. If any stage flag is present, only those stages run and the runner loads existing artifacts for skipped dependencies. When `logs.run_id` is `null`, a partial run that needs existing artifacts automatically reuses the newest matching run directory that contains those artifacts. After `--compute_scores`, `run_config` prints overall score statistics, per-subindex statistics, and ReliableEval N statistics.
 
 ## ReliableEval Workflow

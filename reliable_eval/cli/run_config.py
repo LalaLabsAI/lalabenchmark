@@ -21,6 +21,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the ReliableEval pipeline from a JSON config.")
     parser.add_argument("--config", required=True, help="Path to a run config JSON file")
     parser.add_argument("--workers", type=int, default=16, help="Parallel worker count for model and judge calls")
+    parser.add_argument(
+        "--num_samples",
+        "--num-samples",
+        type=int,
+        help="Run only this many benchmark samples, overriding eval.limit_items in the config",
+    )
     parser.add_argument("--quiet", action="store_true", help="Write verbose logs without echoing progress to stdout")
     stage_help = (
         "Run this stage. If any stage flag is provided, only selected stages run; "
@@ -246,6 +252,7 @@ def main(argv: list[str] | None = None) -> None:
             workers=args.workers,
             echo=not args.quiet,
             step_overrides=stage_step_overrides(args),
+            num_samples=args.num_samples,
         )
     except (OSError, ValueError) as exc:
         parser.exit(2, f"\nERROR: {exc}\n")

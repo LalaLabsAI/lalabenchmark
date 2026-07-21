@@ -129,13 +129,20 @@ DEFAULT_RUN_CONFIG: dict[str, Any] = {
 }
 
 
-def load_run_config(path: str | Path, *, step_overrides: dict[str, bool] | None = None) -> dict[str, Any]:
+def load_run_config(
+    path: str | Path,
+    *,
+    step_overrides: dict[str, bool] | None = None,
+    num_samples: int | None = None,
+) -> dict[str, Any]:
     raw = load_json(path)
     if not isinstance(raw, dict):
         raise ValueError("Run config must be a JSON object")
     config = _deep_merge(deepcopy(DEFAULT_RUN_CONFIG), raw)
     if step_overrides is not None:
         _apply_step_overrides(config, step_overrides)
+    if num_samples is not None:
+        config["eval"]["limit_items"] = num_samples
     _validate_config(config)
     return config
 

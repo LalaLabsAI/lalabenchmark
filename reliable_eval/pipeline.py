@@ -268,11 +268,12 @@ def run_configured_pipeline(
     workers: int = 16,
     echo: bool = True,
     step_overrides: dict[str, bool] | None = None,
+    num_samples: int | None = None,
 ) -> dict[str, Any]:
     if workers < 1:
         raise ValueError("workers must be >= 1")
     config_path = Path(config_path)
-    config = load_run_config(config_path, step_overrides=step_overrides)
+    config = load_run_config(config_path, step_overrides=step_overrides, num_samples=num_samples)
     _run_startup_checks(config, config_path)
     run_dir = _prepare_run_dir(config)
     output_paths = _output_paths(config, run_dir)
